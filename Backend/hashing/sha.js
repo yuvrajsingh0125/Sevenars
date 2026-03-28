@@ -7,7 +7,7 @@ import crypto from 'crypto';
  */
 function generateSHA256(input) {
   // Create a hash object using the SHA-256 algorithm
-  const hash = crypto.createHash('sha-256');
+  const hash = crypto.createHash('sha256');
   
   // Update the hash object with the input string
   hash.update(input);

@@ -5,9 +5,8 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { encryptAES256, decryptAES256, generateSecretKey } from "./encryption/aes.js";
-import { createCipheriv, randomBytes } from 'crypto';
+import { randomBytes } from 'crypto';
 import { generateSHA256 } from "./hashing/sha.js";
-import { uploadToBlockchain } from './scripts/interact.js';
 import mongoose from 'mongoose';
 import { User } from './model/user.js';
 import { Data } from './model/data.js';
@@ -23,13 +22,15 @@ const PORT = 3000;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Serve public folder as static
 app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 mongoose
     .connect("mongodb://localhost:27017/blockchain")
-    .then((e) => console.log("MongoDB connectet"));
+    .then(() => console.log("MongoDB connected"))
+    .catch((err) => console.warn("⚠️ MongoDB not available, skipping:", err.message));
 
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
@@ -47,23 +48,32 @@ app.post('/hash', upload.single('file'), async (req, res) => {
   const keyPart3 = secretKey.slice(22, 32);
 
   try {
-    // Simulated cloud URL — replace with your own upload service
     const fileStorageURL = "https://your-cloud-service.com/encrypted-file";
+
+    // Try blockchain upload, fall back gracefully if node not running
+    async function tryBlockchain(hash, url) {
+      try {
+        const { uploadToBlockchain } = await import('./scripts/interact.js');
+        return await uploadToBlockchain(hash, url);
+      } catch {
+        return { fileId: null, fileHash: hash, fileURL: url, hasAccess: false, message: '⚠️ Blockchain node offline — hash stored locally only.' };
+      }
+    }
 
     // ✅ Encrypt FILE
     if (file) {
       const fileContent = file.buffer.toString('utf-8');
       const encrypted = encryptAES256(fileContent, secretKey);
       const hash = generateSHA256(encrypted);
-
-      const blockchainResult = await uploadToBlockchain(hash, fileStorageURL);
+      const blockchainResult = await tryBlockchain(hash, fileStorageURL);
 
       return res.json({
         type: 'file',
+        encrypted,
         hash,
         secretKeyFragments: [keyPart1, keyPart2, keyPart3],
         ...blockchainResult,
-        message: '✅ File encrypted and uploaded to blockchain.'
+        message: '✅ File encrypted.'
       });
     }
 
@@ -71,39 +81,30 @@ app.post('/hash', upload.single('file'), async (req, res) => {
     if (text) {
       const encrypted = encryptAES256(text, secretKey);
       const hash = generateSHA256(encrypted);
+      const blockchainResult = await tryBlockchain(hash, fileStorageURL);
 
-      const blockchainResult = await uploadToBlockchain(hash, fileStorageURL);
-      const newRecord = new Data({
-        encrypted,
-        hash,
-        secretKeyFragments: keyPart1,
-        fileType: "text",
-        blockchainData: blockchainResult
-      });
-      await newRecord.save();
+      if (mongoose.connection.readyState === 1) {
+        const newRecord = new Data({ encrypted, hash, secretKeyFragments: keyPart1, fileType: "text", blockchainData: blockchainResult });
+        await newRecord.save();
+      }
 
       return res.json({
         type: 'text',
+        encrypted,
         hash,
         secretKeyFragments: [keyPart1, keyPart2, keyPart3],
         ...blockchainResult,
-        message: '✅ Text hashed and uploaded to blockchain.'
+        message: '✅ Text encrypted.'
       });
     }
 
-    // ❌ No file or text provided
     return res.status(400).json({ message: "❌ Provide either a file or text to encrypt." });
 
   } catch (err) {
     console.error(err);
-    return res.status(500).json({
-      message: "❌ Encryption or Blockchain Upload failed.",
-      error: err.message
-    });
+    return res.status(500).json({ message: "❌ Encryption failed.", error: err.message });
   }
 });
-
-app.use(express.json());
 
 app.post('/decrypt', (req, res) => {
   const { encrypted, secretKey } = req.body;
@@ -124,6 +125,8 @@ app.post('/decrypt', (req, res) => {
 
 
 app.post("/signup", async (req, res) => {
+  if (mongoose.connection.readyState !== 1)
+    return res.status(503).json({ message: "⚠️ Database not available" });
   const { fullName, email, password } = req.body;
 
   if (!fullName || !email || !password) {
@@ -141,6 +144,8 @@ app.post("/signup", async (req, res) => {
 });
 
 app.post("/login", async (req, res) => {
+  if (mongoose.connection.readyState !== 1)
+    return res.status(503).json({ message: "⚠️ Database not available" });
   const { email, password } = req.body;
 
   try {
