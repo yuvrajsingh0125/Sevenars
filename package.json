@@ -1,0 +1,23 @@
+{
+  "name": "sevenars",
+  "version": "1.0.0",
+  "description": "Welcome to the **Sevenars** project! This repository contains a collection of innovative tools designed to enhance productivity and efficiency.",
+  "main": "index.js",
+  "scripts": {
+    "dev:full": "concurrently --names \"BACKEND,FRONTEND\" --prefix-colors \"blue,green\" \"npm start --prefix Backend\" \"npm run dev --prefix Frontend\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yuvrajsingh0125/Sevenars.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/yuvrajsingh0125/Sevenars/issues"
+  },
+  "homepage": "https://github.com/yuvrajsingh0125/Sevenars#readme",
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
